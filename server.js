@@ -1,10 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const { Sequelize, DataTypes, Op } = require('sequelize'); // Dodano Op
+const { Sequelize, DataTypes, Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
-// NOWE IMPORTY DLA SOCKET.IO
 const http = require('http');
 const { Server } = require("socket.io");
 
@@ -110,7 +109,6 @@ Rating.belongsTo(User, { foreignKey: 'patientId', as: 'Patient' });
 User.hasMany(Absence, { foreignKey: 'doctorId' });
 Absence.belongsTo(User, { foreignKey: 'doctorId' });
 
-// --- MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -180,6 +178,36 @@ app.post('/api/admin/doctors', authenticateToken, authorizeRole(['admin']), asyn
         await User.create({ username, password: hashedPassword, name, role: 'doctor', specialization });
         res.status(201).json({ message: 'Lekarz dodany' });
     } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// --- POBIERANIE LISTY UŻYTKOWNIKÓW (Dla Admina) ---
+app.get('/api/admin/users', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        const users = await User.findAll({
+            attributes: ['id', 'name', 'username', 'role', 'isBanned'] // Nie wysyłamy haseł!
+        });
+        res.json(users);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- BANOWANIE / ODBANOWANIE UŻYTKOWNIKA ---
+app.put('/api/admin/users/:id/ban', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        const { isBanned } = req.body; // true = zbanuj, false = odbanuj
+        const user = await User.findByPk(req.params.id);
+        
+        if (!user) return res.status(404).json({ error: 'Użytkownik nie istnieje' });
+        if (user.role === 'admin') return res.status(400).json({ error: 'Nie można zbanować admina' });
+
+        user.isBanned = isBanned;
+        await user.save();
+
+        res.json({ message: `Status użytkownika zmieniony na: ${isBanned ? 'Zbanowany' : 'Aktywny'}` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get('/api/doctors', async (req, res) => {
@@ -342,50 +370,13 @@ app.post('/api/doctor/absence', authenticateToken, authorizeRole(['doctor']), as
     }
 });
 
-// Pobierz nieobecności lekarza (potrzebne do kolorowania kalendarza)
+// Pobierz nieobecności lekarza
 app.get('/api/doctor/:id/absences', async (req, res) => {
     const absences = await Absence.findAll({ where: { doctorId: req.params.id } });
     res.json(absences);
 });
 
-// 2. Pobieranie harmonogramu lekarza (Dla wszystkich - żeby widzieć kiedy wolne)
-// Query params: ?doctorId=1
-// POPRAWIONY ENDPOINT: Pobieranie harmonogramu z filtrowaniem dat
-// URL: /api/doctor/schedule?doctorId=1&from=2026-01-05&to=2026-01-11
-// app.get('/api/doctor/schedule', async (req, res) => {
-//     try {
-//         const { doctorId, from, to } = req.query;
-
-//         // Budujemy warunki zapytania (WHERE)
-//         const whereClause = {};
-
-//         // 1. Obowiązkowo po ID lekarza
-//         if (doctorId) {
-//             whereClause.doctorId = doctorId;
-//         } else {
-//             return res.status(400).json({ message: 'Brak doctorId' });
-//         }
-
-//         // 2. Jeśli podano zakres dat, filtrujemy (WHERE date BETWEEN from AND to)
-//         if (from && to) {
-//             whereClause.date = {
-//                 [Op.between]: [from, to] // To jest ta magia Sequelize
-//             };
-//         }
-
-//         const slots = await Slot.findAll({
-//             where: whereClause,
-//             order: [['date', 'ASC'], ['time', 'ASC']]
-//         });
-        
-//         res.json(slots);
-//     } catch (e) {
-//         console.error("Błąd pobierania grafiku:", e);
-//         res.status(500).json({ error: e.message });
-//     }
-// });
-
-// Pobierz harmonogram lekarza (Z FILTROWANIEM PRYWATNOŚCI)
+// Pobierz harmonogram lekarza
 app.get('/api/doctor/schedule', authenticateToken, async (req, res) => {
     try {
         const { doctorId, from, to } = req.query;
@@ -670,59 +661,6 @@ app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
     }
 });
 
-// 4. Finalizacja (Checkout)
-// app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
-//     const transaction = await sequelize.transaction();
-    
-//     try {
-//         const patientId = req.user.id;
-        
-//         // 1. Pobierz koszyk pacjenta
-//         const cartItems = await CartItem.findAll({
-//             where: { patientId },
-//             include: [Slot],
-//             transaction,
-//             lock: transaction.LOCK.UPDATE
-//         });
-        
-//         if (cartItems.length === 0) {
-//             await transaction.rollback();
-//             return res.status(400).json({ message: "Koszyk jest pusty" });
-//         }
-        
-//         // 2. Zarezerwuj sloty
-//         for (const item of cartItems) {
-//             if (item.Slot.status === 'booked') {
-//                 await transaction.rollback();
-//                 return res.status(400).json({
-//                     message: `Termin ${item.Slot.id} jest już niedostępny`
-//                 });
-//             }
-            
-//             await item.Slot.update({
-//                 status: 'booked',
-//                 isBooked: true, 
-//                 patientId
-//             }, { transaction });
-//         }
-        
-//         // 3. Wyczyść koszyk
-//         await CartItem.destroy({
-//             where: { patientId },
-//             transaction
-//         });
-        
-//         await transaction.commit();
-        
-//         io.emit('schedule_update');
-//         res.json({ message: "Rezerwacja potwierdzona 🎉" });
-        
-//     } catch (error) {
-//         await transaction.rollback();
-//         res.status(500).json({ error: error.message });
-//     }
-// });
-
 // 4. Finalizacja (Checkout) - ZABEZPIECZONA
 app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
     const transaction = await sequelize.transaction();
@@ -803,24 +741,7 @@ app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
     }
 });
 
-// 5. Moje wizyty
-// app.get('/api/appointments/my', authenticateToken, async (req, res) => {
-//     try {
-//         const appointments = await Slot.findAll({
-//             where: { 
-//                 patientId: req.user.id,
-//                 status: 'booked'
-//             },
-//             // TU TEŻ ZMIANA: as: 'Doctor'
-//             include: [{ model: User, as: 'Doctor', attributes: ['name', 'specialization'] }],
-//             order: [['date', 'ASC'], ['time', 'ASC']]
-//         });
-//         res.json(appointments);
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// });
-// Pobierz moje wizyty (Dla Pacjenta - POPRAWIONE)
+// Pobierz moje wizyty
 app.get('/api/appointments/my', authenticateToken, async (req, res) => {
     try {
         const appointments = await Slot.findAll({
@@ -981,7 +902,7 @@ app.get('/api/doctor/my-appointments', authenticateToken, authorizeRole(['doctor
 // --- START ---
 const startServer = async () => {
     try {
-        sequelize.sync({ alter: true }).then(() => {
+        await sequelize.sync({ alter: true }).then(() => {
             console.log("Baza danych zaktualizowana!");
         });
         console.log('Baza danych OK.');
