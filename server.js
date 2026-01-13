@@ -55,6 +55,7 @@ const Slot = sequelize.define('Slot', {
 
     // isBooked: { type: DataTypes.BOOLEAN, defaultValue: false },
     visitType: { type: DataTypes.STRING }, // np. "Pierwsza wizyta"
+    patientName: { type: DataTypes.STRING },
     patientNotes: { type: DataTypes.TEXT }, // "Informacje dla lekarza"
     patientAge: { type: DataTypes.INTEGER },
     patientGender: { type: DataTypes.STRING }
@@ -186,10 +187,6 @@ app.get('/api/doctors', async (req, res) => {
     res.json(doctors);
 });
 
-
-// 1. Dodawanie dostępności (Tylko Lekarz)
-// Body: { date: "2025-02-01", startTime: "08:00", endTime: "12:00" }
-// (Wersja uproszczona: dodaje sloty na jeden dzień. Pętla "cykliczna" powinna być zrobiona na froncie lub w pętli tutaj)
 app.post('/api/availability', authenticateToken, authorizeRole(['doctor']), async (req, res) => {
     try {
         const { date, startTime, endTime } = req.body;
@@ -526,6 +523,7 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
             // Zapisujemy szczegóły wizyty
             if (details) {
                 slot.visitType = details.visitType;
+                slot.patientName = details.patientName; 
                 slot.patientAge = details.patientAge;
                 slot.patientGender = details.patientGender;
                 slot.patientNotes = details.notes;
@@ -983,7 +981,9 @@ app.get('/api/doctor/my-appointments', authenticateToken, authorizeRole(['doctor
 // --- START ---
 const startServer = async () => {
     try {
-        await sequelize.sync(); 
+        sequelize.sync({ alter: true }).then(() => {
+            console.log("Baza danych zaktualizowana!");
+        });
         console.log('Baza danych OK.');
         
         // Auto-Admin
