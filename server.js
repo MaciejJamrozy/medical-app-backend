@@ -167,7 +167,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ message: 'Błąd logowania' });
         }
         const token = jwt.sign({ id: user.id, role: user.role }, SECRET_KEY, { expiresIn: '2h' });
-        res.json({ token, role: user.role, username: user.username, id: user.id });
+        res.json({ token, role: user.role, username: user.username, id: user.id, isBanned: user.isBanned });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -539,38 +539,6 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
     }
 });
 
-// app.post('/api/cart/add', authenticateToken, async (req, res) => {
-//     if (req.user.role !== 'patient')
-//         return res.status(403).json({ message: "Tylko pacjent może rezerwować wizyty" });
-    
-//     const { slotId } = req.body;
-//     const patientId = req.user.id;
-    
-//     try {
-//         const slot = await Slot.findOne({
-//             where: { id: slotId, status: 'free' }
-//         });
-        
-//         if (!slot)
-//             return res.status(400).json({ message: "Termin niedostępny" });
-        
-//         // Czy slot nie jest już w czyimś koszyku
-//         const exists = await CartItem.findOne({ where: { slotId } });
-//         if (exists)
-//             return res.status(400).json({ message: "Termin jest w koszyku innego pacjenta" });
-        
-//         const cartItem = await CartItem.create({
-//             slotId,
-//             patientId
-//         });
-        
-//         io.emit('schedule_update'); // POWIADOMIENIE: Ktoś zajął termin!
-//         res.json({ message: "Dodano do koszyka", cartItem });
-        
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// });
 
 // 2. Zobacz mój koszyk
 app.get('/api/cart', authenticateToken, async (req, res) => {
@@ -875,6 +843,32 @@ app.get('/api/doctors/:id/ratings', async (req, res) => {
     }
 });
 
+app.get('/api/admin/ratings', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        const ratings = await Rating.findAll({
+            include: [
+                { model: User, as: 'Patient', attributes: ['name', 'username'] }, // Kto wystawił
+                { model: User, as: 'Doctor', attributes: ['name', 'specialization'] } // Komu wystawił
+            ],
+            order: [['createdAt', 'DESC']] // Najnowsze na górze
+        });
+        res.json(ratings);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/admin/ratings/:id', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+    try {
+        const result = await Rating.destroy({ where: { id: req.params.id } });
+        if (result === 0) return res.status(404).json({ error: 'Opinia nie istnieje' });
+        
+        res.json({ message: 'Opinia usunięta' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Pobierz moje nadchodzące wizyty (Dla zalogowanego Lekarza)
 app.get('/api/doctor/my-appointments', authenticateToken, authorizeRole(['doctor']), async (req, res) => {
     try {
@@ -915,7 +909,6 @@ const startServer = async () => {
             console.log('Stworzono Admina (admin/admin123)');
         }
 
-        // app.listen(PORT, () => console.log(`Serwer na porcie ${PORT}`));
         server.listen(PORT, () => {
             console.log(`Serwer (z Socket.io) działa na porcie ${PORT}`);
         });
