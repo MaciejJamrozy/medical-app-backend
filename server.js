@@ -896,9 +896,7 @@ app.get('/api/doctor/my-appointments', authenticateToken, authorizeRole(['doctor
 // --- START ---
 const startServer = async () => {
     try {
-        await sequelize.sync({ alter: true }).then(() => {
-            console.log("Baza danych zaktualizowana!");
-        });
+        await sequelize.sync()
         console.log('Baza danych OK.');
         
         // Auto-Admin
