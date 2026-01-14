@@ -75,37 +75,30 @@ const Rating = sequelize.define('Rating', {
 });
 
 const Absence = sequelize.define('Absence', {
-    date: { type: DataTypes.STRING, allowNull: false }, // Format YYYY-MM-DD
+    date: { type: DataTypes.STRING, allowNull: false },
     reason: { type: DataTypes.STRING }
 });
 
-// --- RELACJE (Skopiuj to dokładnie) ---
+// --- RELACJE ---
 
-// 1. Lekarz <-> Sloty
 User.hasMany(Slot, { foreignKey: 'doctorId', as: 'doctorSlots' });
-Slot.belongsTo(User, { foreignKey: 'doctorId', as: 'Doctor' }); // Wielka litera 'Doctor'
+Slot.belongsTo(User, { foreignKey: 'doctorId', as: 'Doctor' });
 
-// 2. Pacjent <-> Wizyty (Zarezerwowane)
 User.hasMany(Slot, { foreignKey: 'patientId', as: 'patientVisits' });
 Slot.belongsTo(User, { foreignKey: 'patientId', as: 'Patient' });
 
-// 3. Koszyk (Kluczowe poprawki)
-// Jeden pacjent ma wiele rzeczy w koszyku
 User.hasMany(CartItem, { foreignKey: 'patientId' });
 CartItem.belongsTo(User, { foreignKey: 'patientId' });
 
-// Jedna pozycja w koszyku wskazuje na jeden Slot
 Slot.hasOne(CartItem, { foreignKey: 'slotId' });
-CartItem.belongsTo(Slot, { foreignKey: 'slotId' }); // Bez aliasu, domyślnie 'Slot'
+CartItem.belongsTo(Slot, { foreignKey: 'slotId' });
 
-// 4. Oceny
 User.hasMany(Rating, { foreignKey: 'doctorId', as: 'receivedRatings' });
 Rating.belongsTo(User, { foreignKey: 'doctorId', as: 'Doctor' });
 
 User.hasMany(Rating, { foreignKey: 'patientId', as: 'givenRatings' });
 Rating.belongsTo(User, { foreignKey: 'patientId', as: 'Patient' });
 
-// 5. Nieobecności
 User.hasMany(Absence, { foreignKey: 'doctorId' });
 Absence.belongsTo(User, { foreignKey: 'doctorId' });
 
@@ -128,13 +121,12 @@ const authorizeRole = (roles) => {
     };
 };
 
-// --- LOGIKA POMOCNICZA (Generowanie Slotów) ---
+// --- LOGIKA POMOCNICZA ---
 const generateTimeSlots = (startStr, endStr) => {
     const slots = [];
     let [h, m] = startStr.split(':').map(Number);
     const [endH, endM] = endStr.split(':').map(Number);
     
-    // Pętla co 30 minut
     while (h < endH || (h === endH && m < endM)) {
         const timeString = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
         slots.push(timeString);
@@ -148,7 +140,6 @@ const generateTimeSlots = (startStr, endStr) => {
     return slots;
 };
 
-// --- ENDPOINTY: AUTH & USERS (Z Etapu 1) ---
 
 app.post('/api/auth/register', async (req, res) => {
     try {
@@ -180,11 +171,10 @@ app.post('/api/admin/doctors', authenticateToken, authorizeRole(['admin']), asyn
     } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// --- POBIERANIE LISTY UŻYTKOWNIKÓW (Dla Admina) ---
 app.get('/api/admin/users', authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
         const users = await User.findAll({
-            attributes: ['id', 'name', 'username', 'role', 'isBanned'] // Nie wysyłamy haseł!
+            attributes: ['id', 'name', 'username', 'role', 'isBanned']
         });
         res.json(users);
     } catch (e) {
@@ -192,10 +182,9 @@ app.get('/api/admin/users', authenticateToken, authorizeRole(['admin']), async (
     }
 });
 
-// --- BANOWANIE / ODBANOWANIE UŻYTKOWNIKA ---
 app.put('/api/admin/users/:id/ban', authenticateToken, authorizeRole(['admin']), async (req, res) => {
     try {
-        const { isBanned } = req.body; // true = zbanuj, false = odbanuj
+        const { isBanned } = req.body;
         const user = await User.findByPk(req.params.id);
         
         if (!user) return res.status(404).json({ error: 'Użytkownik nie istnieje' });
@@ -220,13 +209,10 @@ app.post('/api/availability', authenticateToken, authorizeRole(['doctor']), asyn
         const { date, startTime, endTime } = req.body;
         const doctorId = req.user.id;
 
-        // 1. Wygeneruj godziny (np. 08:00, 08:30, 09:00...)
         const times = generateTimeSlots(startTime, endTime);
         const createdSlots = [];
 
-        // 2. Dla każdej godziny stwórz wpis w bazie
         for (const time of times) {
-            // Sprawdź czy taki slot już nie istnieje, żeby nie dublować
             const exists = await Slot.findOne({ where: { doctorId, date, time } });
             if (!exists) {
                 const slot = await Slot.create({
@@ -239,57 +225,48 @@ app.post('/api/availability', authenticateToken, authorizeRole(['doctor']), asyn
             }
         }
 
-        io.emit('schedule_update'); // POWIADOMIENIE: Termin zwolniony!
+        io.emit('schedule_update');
         res.json({ message: `Dodano ${createdSlots.length} slotów na dzień ${date}`, slots: createdSlots });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 });
 
-// --- GENEROWANIE CYKLICZNE ---
 app.post('/api/availability/cyclical', authenticateToken, authorizeRole(['doctor']), async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { startDate, endDate, weekDays, timeRanges } = req.body;
         const doctorId = req.user.id;
-        const slotDuration = 30; // minuty
+        const slotDuration = 30;
 
         const start = new Date(startDate);
         const end = new Date(endDate);
         const generatedSlots = [];
 
-        // Pętla po dniach z zakresu
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            const currentDayOfWeek = d.getDay(); // 0=Nd, 1=Pn...
+            const currentDayOfWeek = d.getDay();
             const dateStr = d.toISOString().split('T')[0];
 
-            // WALIDACJA ABSENCJI: Czy w tym dniu jest nieobecność?
             const absence = await Absence.findOne({ where: { doctorId, date: dateStr }, transaction });
             if (absence) {
                 console.log(`Pominięto ${dateStr} z powodu nieobecności.`);
-                continue; // Przeskocz ten dzień, nie generuj slotów
+                continue;
             }
 
-            // Sprawdź czy dzień pasuje do maski (weekDays to np. [1, 2, 4])
             if (weekDays.includes(currentDayOfWeek)) {
                 
-
-                // Pętla po przedziałach godzinowych (np. rano i wieczorem)
                 for (const range of timeRanges) {
-                    // Konwersja czasu "08:00" na minuty od północy
                     const [startH, startM] = range.start.split(':').map(Number);
                     const [endH, endM] = range.end.split(':').map(Number);
                     
                     let currentMinutes = startH * 60 + startM;
                     const endMinutes = endH * 60 + endM;
 
-                    // Generowanie slotów co 30 min wewnątrz przedziału
                     while (currentMinutes + slotDuration <= endMinutes) {
                         const h = Math.floor(currentMinutes / 60);
                         const m = currentMinutes % 60;
                         const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
-                        // Sprawdź czy taki slot już nie istnieje (żeby nie dublować)
                         const exists = await Slot.findOne({
                             where: { doctorId, date: dateStr, time: timeStr },
                             transaction
@@ -313,7 +290,7 @@ app.post('/api/availability/cyclical', authenticateToken, authorizeRole(['doctor
 
         await transaction.commit();
         
-        io.emit('schedule_update'); // Powiadom wszystkich!
+        io.emit('schedule_update');
         
         res.json({ 
             message: `Wygenerowano ${generatedSlots.length} slotów.`,
@@ -326,17 +303,14 @@ app.post('/api/availability/cyclical', authenticateToken, authorizeRole(['doctor
     }
 });
 
-// Zgłoś nieobecność (Absencja)
 app.post('/api/doctor/absence', authenticateToken, authorizeRole(['doctor']), async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { date, reason } = req.body;
         const doctorId = req.user.id;
 
-        // 1. Stwórz wpis o nieobecności
         await Absence.create({ doctorId, date, reason }, { transaction });
 
-        // 2. KONFLIKTY - Znajdź wszystkie sloty w tym dniu
         const slots = await Slot.findAll({
             where: { doctorId, date },
             transaction
@@ -346,18 +320,16 @@ app.post('/api/doctor/absence', authenticateToken, authorizeRole(['doctor']), as
 
         for (const slot of slots) {
             if (slot.status === 'booked' || slot.status === 'pending') {
-                // JEŚLI ZAJĘTY -> Zmień na 'cancelled' (Powiadomienie pacjenta = status w jego panelu)
                 slot.status = 'cancelled';
                 await slot.save({ transaction });
                 cancelledCount++;
             } else {
-                // JEŚLI WOLNY -> Usuń go całkowicie, skoro lekarza nie ma
                 await slot.destroy({ transaction });
             }
         }
 
         await transaction.commit();
-        io.emit('schedule_update'); // Odśwież widoki u wszystkich
+        io.emit('schedule_update');
 
         res.json({ 
             message: `Nieobecność dodana. Odwołano wizyt: ${cancelledCount}.`,
@@ -370,18 +342,16 @@ app.post('/api/doctor/absence', authenticateToken, authorizeRole(['doctor']), as
     }
 });
 
-// Pobierz nieobecności lekarza
 app.get('/api/doctor/:id/absences', async (req, res) => {
     const absences = await Absence.findAll({ where: { doctorId: req.params.id } });
     res.json(absences);
 });
 
-// Pobierz harmonogram lekarza
 app.get('/api/doctor/schedule', authenticateToken, async (req, res) => {
     try {
         const { doctorId, from, to } = req.query;
-        const requestingUserId = req.user.id; // Kto pyta?
-        const requestingUserRole = req.user.role; // Czy to lekarz czy pacjent?
+        const requestingUserId = req.user.id;
+        const requestingUserRole = req.user.role;
 
         const whereClause = {};
         if (doctorId) whereClause.doctorId = doctorId;
@@ -396,38 +366,28 @@ app.get('/api/doctor/schedule', authenticateToken, async (req, res) => {
             order: [['date', 'ASC'], ['time', 'ASC']]
         });
         
-        // --- LOGIKA SANITYZACJI DANYCH ---
-        // Przerabiamy dane, żeby ukryć prywatne rzeczy przed obcymi
         const sanitizedSlots = slots.map(slot => {
-            // Zamieniamy obiekt Sequelize na zwykły JSON, żeby móc go edytować
             const s = slot.toJSON(); 
 
-            // Jeśli to podgląda LEKARZ - widzi wszystko, nic nie zmieniamy.
             if (requestingUserRole === 'doctor') return s;
 
             const isMySlot = (s.patientId === requestingUserId);
 
-            // 1. UKRYWANIE STATUSU 'CANCELLED'
-            // Jeśli wizyta jest odwołana, ale to NIE moja wizyta -> widzę ją jako zwykłe "Zajęte"
             if (s.status === 'cancelled' && !isMySlot) {
                 s.status = 'booked'; 
             }
 
-            // 2. UKRYWANIE STATUSU 'PENDING' (KOSZYK)
-            // Jeśli ktoś inny ma to w koszyku -> widzę to jako "Zajęte"
             if (s.status === 'pending' && !isMySlot) {
                 s.status = 'booked';
             }
 
-            // 3. CZYSZCZENIE DANYCH OSOBOWYCH
-            // Jeśli to nie moja wizyta, nie powinienem widzieć nazwiska ani notatek!
             if (!isMySlot) {
                 s.patientName = null;
                 s.patientNotes = null;
                 s.patientAge = null;
                 s.patientGender = null;
                 s.visitType = null;
-                s.patientId = null; // Ukrywamy nawet ID
+                s.patientId = null;
             }
 
             return s;
@@ -443,37 +403,27 @@ app.get('/api/doctor/schedule', authenticateToken, async (req, res) => {
 
 
 
-// ==========================================
-// ETAP 3: LOGIKA PACJENTA (KOSZYK I REZERWACJE)
-// ==========================================
+// ETAP 3: LOGIKA PACJENTA
 
 // 1. Dodaj do koszyka
-// Dodawanie do koszyka z FORMULARZEM i DETEKCJĄ KONFLIKTÓW
 app.post('/api/cart/add', authenticateToken, async (req, res) => {
     if (req.user.role !== 'patient') return res.status(403).json({ message: "Brak uprawnień" });
 
     const transaction = await sequelize.transaction();
     try {
         const { startSlotId, duration = 1, details } = req.body; 
-        // duration: 1 (30min), 2 (60min), 3 (90min)...
-        // details: { type, age, gender, notes }
 
         const patientId = req.user.id;
 
-        // 1. Pobierz slot startowy
         const firstSlot = await Slot.findOne({ where: { id: startSlotId }, transaction });
         if (!firstSlot) throw new Error("Slot nie istnieje");
 
-        // 2. Znajdź WSZYSTKIE potrzebne sloty (startowy + kolejne)
-        // Logika: Szukamy slotów tego samego lekarza, w ten sam dzień, o kolejnych godzinach
         const allSlotsToBook = [firstSlot];
         
-        // Obliczamy kolejne godziny
         let currentH = parseInt(firstSlot.time.split(':')[0]);
         let currentM = parseInt(firstSlot.time.split(':')[1]);
 
         for (let i = 1; i < duration; i++) {
-            // Dodaj 30 min
             currentM += 30;
             if (currentM >= 60) {
                 currentH += 1;
@@ -481,7 +431,6 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
             }
             const nextTimeStr = `${String(currentH).padStart(2,'0')}:${String(currentM).padStart(2,'0')}`;
             
-            // Szukaj kolejnego slotu w bazie
             const nextSlot = await Slot.findOne({
                 where: {
                     doctorId: firstSlot.doctorId,
@@ -504,14 +453,10 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
             }
         }
 
-        // 4. Rezerwacja (Update slotów + Insert do CartItems)
         for (const slot of allSlotsToBook) {
-            // Aktualizacja Slota danymi z formularza
             slot.status = 'pending';
-            // slot.isBooked = false; // Zgodnie z wymaganiem
             slot.patientId = patientId;
             
-            // Zapisujemy szczegóły wizyty
             if (details) {
                 slot.visitType = details.visitType;
                 slot.patientName = details.patientName; 
@@ -522,7 +467,6 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
             
             await slot.save({ transaction });
 
-            // Dodanie do koszyka
             await CartItem.create({
                 patientId,
                 slotId: slot.id
@@ -530,7 +474,7 @@ app.post('/api/cart/add', authenticateToken, async (req, res) => {
         }
 
         await transaction.commit();
-        io.emit('schedule_update'); // Sockety
+        io.emit('schedule_update');
         res.json({ message: "Dodano wizytę do koszyka" });
 
     } catch (error) {
@@ -557,35 +501,13 @@ app.get('/api/cart', authenticateToken, async (req, res) => {
     }
 });
 
-// 3. Usuń z koszyka (POPRAWIONE dla tabeli CartItems)
-// app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
-//     try {
-//         const deleted = await CartItem.destroy({
-//             where: {
-//                 slotId: req.params.slotId,
-//                 patientId: req.user.id
-//             }
-//         });
-        
-//         if (!deleted)
-//             return res.status(404).json({ message: "Nie znaleziono pozycji w koszyku" });
-        
-//         io.emit('schedule_update'); // POWIADOMIENIE: Termin zwolniony!
-//         res.json({ message: "Usunięto z koszyka" });
-        
-//     } catch (error) {
-//         res.status(500).json({ error: error.message });
-//     }
-// });
-
-// Usuwanie z koszyka (Przywracanie slotu do wolnych)
+// Usuwanie z koszyka
 app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const { slotId } = req.params;
         const patientId = req.user.id;
 
-        // 1. Znajdź slot
         const slot = await Slot.findOne({ where: { id: slotId }, transaction });
 
         if (!slot) {
@@ -593,7 +515,6 @@ app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: "Slot nie istnieje" });
         }
 
-        // 2. Znajdź i usuń wpis w koszyku
         const cartItem = await CartItem.findOne({
             where: { slotId, patientId },
             transaction
@@ -603,11 +524,9 @@ app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
             await cartItem.destroy({ transaction });
         }
 
-        // 3. KLUCZOWE: Przywróć slot do stanu początkowego!
         slot.status = 'free';
         slot.patientId = null;
         
-        // Czyścimy dane formularza ("śmieci" po niedoszłej rezerwacji)
         slot.visitType = null;
         slot.patientName = null;
         slot.patientAge = null;
@@ -618,7 +537,6 @@ app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
 
         await transaction.commit();
         
-        // 4. Powiadom wszystkich, że slot jest znowu wolny (zielony)
         io.emit('schedule_update'); 
         
         res.json({ message: "Usunięto z koszyka i zwolniono termin" });
@@ -629,14 +547,13 @@ app.delete('/api/cart/:slotId', authenticateToken, async (req, res) => {
     }
 });
 
-// 4. Finalizacja (Checkout) - ZABEZPIECZONA
+// 4. Finalizacja (Checkout)
 app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
     const transaction = await sequelize.transaction();
     
     try {
         const patientId = req.user.id;
         
-        // 1. Pobierz koszyk pacjenta
         const cartItems = await CartItem.findAll({
             where: { patientId },
             include: [Slot],
@@ -649,30 +566,24 @@ app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: "Koszyk jest pusty" });
         }
         
-        // 2. Walidacja i Rezerwacja
         for (const item of cartItems) {
             const slot = item.Slot;
 
-            // A. Czy slot w ogóle istnieje? (Mógł zostać usunięty przez lekarza)
             if (!slot) {
                 await transaction.rollback();
                 return res.status(400).json({ message: "Jeden z terminów został usunięty przez lekarza." });
             }
 
-            // B. Czy jest już zajęty przez kogoś innego?
             if (slot.status === 'booked') {
                 await transaction.rollback();
                 return res.status(400).json({ message: `Termin ${slot.time} jest już niedostępny.` });
             }
 
-            // C. NOWE: Czy został odwołany? (np. przez dodanie absencji, gdy był w koszyku)
             if (slot.status === 'cancelled') {
                 await transaction.rollback();
                 return res.status(400).json({ message: `Termin ${slot.time} został odwołany przez lekarza.` });
             }
 
-            // D. NOWE (Opcjonalne, ale bardzo bezpieczne): Czy lekarz ma w tym dniu Absencję?
-            // To chroni przed sytuacją, w której logika absencji pominęła status 'pending'
             const absence = await Absence.findOne({
                 where: { doctorId: slot.doctorId, date: slot.date },
                 transaction
@@ -683,15 +594,12 @@ app.post('/api/cart/checkout', authenticateToken, async (req, res) => {
                 return res.status(400).json({ message: `Lekarz zgłosił nieobecność w dniu ${slot.date}. Rezerwacja niemożliwa.` });
             }
             
-            // JEŚLI WSZYSTKO OK -> REZERWUJEMY
             await slot.update({
                 status: 'booked',
                 patientId
-                // isBooked usunęliśmy w poprzednich krokach, więc go tu nie ma
             }, { transaction });
         }
         
-        // 3. Wyczyść koszyk
         await CartItem.destroy({
             where: { patientId },
             transaction
@@ -715,13 +623,12 @@ app.get('/api/appointments/my', authenticateToken, async (req, res) => {
         const appointments = await Slot.findAll({
             where: {
                 patientId: req.user.id,
-                // WAŻNE: Pobieramy 'booked' ORAZ 'cancelled'
                 status: {
                     [Op.or]: ['booked', 'cancelled'] 
                 }
             },
             include: [{ model: User, as: 'Doctor', attributes: ['name', 'specialization'] }],
-            order: [['date', 'DESC'], ['time', 'DESC']] // Najnowsze na górze
+            order: [['date', 'DESC'], ['time', 'DESC']]
         });
         res.json(appointments);
     } catch (e) {
@@ -729,14 +636,13 @@ app.get('/api/appointments/my', authenticateToken, async (req, res) => {
     }
 });
 
-// Anulowanie wizyty przez pacjenta (Zwrot terminu)
+// Anulowanie wizyty przez pacjenta
 app.post('/api/appointments/:id/cancel', authenticateToken, async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
         const slotId = req.params.id;
         const patientId = req.user.id;
 
-        // 1. Znajdź wizytę (musi należeć do tego pacjenta i być 'booked')
         const slot = await Slot.findOne({
             where: { 
                 id: slotId, 
@@ -751,7 +657,6 @@ app.post('/api/appointments/:id/cancel', authenticateToken, async (req, res) => 
             return res.status(404).json({ message: "Wizyta nie znaleziona lub nie można jej anulować." });
         }
 
-        // 2. Opcjonalnie: Sprawdź czy wizyta nie jest w przeszłości (żeby nie anulować odbytych)
         const now = new Date();
         const slotDate = new Date(`${slot.date}T${slot.time}`);
         if (slotDate < now) {
@@ -759,11 +664,9 @@ app.post('/api/appointments/:id/cancel', authenticateToken, async (req, res) => 
             return res.status(400).json({ message: "Nie można odwołać wizyty, która już się odbyła." });
         }
 
-        // 3. Resetowanie slotu (Przywracamy do puli wolnych)
         slot.status = 'free';
         slot.patientId = null;
         
-        // Czyścimy dane wrażliwe (RODO!)
         slot.visitType = null;
         slot.patientName = null;
         slot.patientAge = null;
@@ -774,7 +677,6 @@ app.post('/api/appointments/:id/cancel', authenticateToken, async (req, res) => 
 
         await transaction.commit();
         
-        // 4. Powiadomienie (Slot zrobi się zielony u innych)
         io.emit('schedule_update');
 
         res.json({ message: "Wizyta została odwołana. Termin wrócił do puli wolnych." });
@@ -785,9 +687,7 @@ app.post('/api/appointments/:id/cancel', authenticateToken, async (req, res) => 
     }
 });
 
-// ==========================================
 // ETAP 5: OCENY I KOMENTARZE
-// ==========================================
 
 // 1. Dodaj ocenę
 app.post('/api/ratings', authenticateToken, authorizeRole(['patient']), async (req, res) => {
@@ -795,14 +695,11 @@ app.post('/api/ratings', authenticateToken, authorizeRole(['patient']), async (r
         const { doctorId, stars, comment } = req.body;
         const patientId = req.user.id;
         
-        // WALIDACJA 1: Czy pacjent w ogóle był u tego lekarza?
-        // Szukamy wizyty, która jest ZATWIERDZONA (booked)
         const visit = await Slot.findOne({
             where: {
                 doctorId: doctorId,
                 patientId: patientId,
                 status: 'booked'
-                // Opcjonalnie: date < dzisiaj (żeby oceniać tylko wizyty, które się odbyły)
             }
         });
         
@@ -810,7 +707,6 @@ app.post('/api/ratings', authenticateToken, authorizeRole(['patient']), async (r
             return res.status(403).json({ message: "Możesz ocenić tylko lekarza, u którego miałeś wizytę." });
         }
         
-        // WALIDACJA 2: Czy już nie oceniono tego lekarza?
         const existingRating = await Rating.findOne({ where: { doctorId, patientId } });
         if (existingRating) {
             return res.status(400).json({ message: "Już oceniłeś tego lekarza." });
