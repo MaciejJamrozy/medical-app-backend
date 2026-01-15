@@ -10,7 +10,7 @@ const authenticateToken = (req, res, next) => {
     if (!token) return res.status(401).json({ message: 'Brak tokena' });
 
     jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ message: 'Token nieprawidłowy lub wygasł' });
+        if (err) return res.status(403).json({ message: 'Token nieprawidłowy' });
         req.user = user;
         next();
     });

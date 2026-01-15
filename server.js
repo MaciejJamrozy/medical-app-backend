@@ -18,27 +18,48 @@ const io = new Server(server, {
     cors: { origin: "http://localhost:3000", methods: ["GET", "POST"] }
 });
 
-// Socket.io Middleware - dzięki temu w kontrolerach mamy dostęp do req.io
 app.use((req, res, next) => {
     req.io = io;
     next();
 });
 
-// Podpinamy trasy
 app.use('/api', apiRoutes);
 
-// Socket info
 io.on('connection', (socket) => {
     console.log('Nowy klient połączony:', socket.id);
+
+    // 1. Rejestracja użytkownika (Frontend wysyła to po zalogowaniu)
+    socket.on('register_user', (userId) => {
+        const roomName = `user_${userId}`;
+        
+        // SINGLE SESSION MAGIC:
+        // Zanim ten nowy socket dołączy, wysyłamy do WSZYSTKICH INNYCH w tym pokoju sygnał wylogowania.
+        // socket.to(...) wysyła do innych w pokoju, ale NIE do nadawcy.
+        socket.to(roomName).emit('force_logout', { 
+            reason: 'Zalogowano się na innym urządzeniu (Single Session).' 
+        });
+
+        // Teraz nowy socket dołącza (jest bezpieczny)
+        socket.join(roomName);
+        console.log(`Socket ${socket.id} przypisany do użytkownika ${userId}`);
+    });
+
+    // 2. Obsługa ręcznego wylogowania (opcjonalne, do czyszczenia pokoju)
+    socket.on('unregister_user', (userId) => {
+        socket.leave(`user_${userId}`);
+    });
+
+    socket.on('disconnect', () => {
+        // Socket sam wyjdzie z pokoju automatycznie
+        console.log('Klient rozłączony:', socket.id);
+    });
 });
 
-// Start serwera
 const startServer = async () => {
     try {
         await sequelize.sync();
         console.log('Baza danych OK.');
         
-        // Auto-Admin
         const admin = await User.findOne({ where: { role: 'admin' } });
         if (!admin) {
             const pass = await bcrypt.hash('admin123', 10);
@@ -46,7 +67,6 @@ const startServer = async () => {
             console.log('Stworzono Admina (admin/admin123)');
         }
 
-        // NOWE: Domyślne ustawienie Auth Mode
         const authSetting = await Setting.findOne({ where: { key: 'AUTH_MODE' } });
         if (!authSetting) {
             await Setting.create({ key: 'AUTH_MODE', value: 'LOCAL' });

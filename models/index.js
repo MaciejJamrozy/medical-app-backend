@@ -1,7 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
-// Definicje Modeli
 const User = sequelize.define('User', {
     username: { type: DataTypes.STRING, unique: true, allowNull: false },
     password: { type: DataTypes.STRING, allowNull: false },
@@ -9,7 +8,7 @@ const User = sequelize.define('User', {
     name: { type: DataTypes.STRING, allowNull: false },
     specialization: { type: DataTypes.STRING, allowNull: true },
     isBanned: { type: DataTypes.BOOLEAN, defaultValue: false },
-    refreshToken: { type: DataTypes.STRING, allowNull: true } // NOWE POLE
+    refreshToken: { type: DataTypes.STRING, allowNull: true }
 });
 
 const Slot = sequelize.define('Slot', {
@@ -43,7 +42,7 @@ const Absence = sequelize.define('Absence', {
 // 2. Setting - NOWY MODEL do Zadania 1
 const Setting = sequelize.define('Setting', {
     key: { type: DataTypes.STRING, unique: true, allowNull: false },
-    value: { type: DataTypes.STRING, allowNull: false } // 'LOCAL', 'SESSION', 'NONE'
+    value: { type: DataTypes.STRING, allowNull: false }
 });
 
 // Relacje
