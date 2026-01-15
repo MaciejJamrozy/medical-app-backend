@@ -1,13 +1,16 @@
 const jwt = require('jsonwebtoken');
-const SECRET_KEY = 'super-tajny-klucz-do-podmiany-w-produkcji';
+
+const ACCESS_TOKEN_SECRET = 'super-tajny-klucz-dostepu';
+const REFRESH_TOKEN_SECRET = 'super-tajny-klucz-odswiezania';
 
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
+    
     if (!token) return res.status(401).json({ message: 'Brak tokena' });
 
-    jwt.verify(token, SECRET_KEY, (err, user) => {
-        if (err) return res.status(403).json({ message: 'Token nieprawidłowy' });
+    jwt.verify(token, ACCESS_TOKEN_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ message: 'Token nieprawidłowy lub wygasł' });
         req.user = user;
         next();
     });
@@ -20,4 +23,9 @@ const authorizeRole = (roles) => {
     };
 };
 
-module.exports = { authenticateToken, authorizeRole, SECRET_KEY };
+module.exports = { 
+    authenticateToken, 
+    authorizeRole, 
+    ACCESS_TOKEN_SECRET, 
+    REFRESH_TOKEN_SECRET 
+};

@@ -4,7 +4,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const bcrypt = require('bcryptjs');
 
-const { sequelize, User } = require('./models');
+const { sequelize, User, Setting } = require('./models');
 const apiRoutes = require('./routes/api');
 
 const app = express();
@@ -44,6 +44,13 @@ const startServer = async () => {
             const pass = await bcrypt.hash('admin123', 10);
             await User.create({ username: 'admin', password: pass, name: 'Admin', role: 'admin' });
             console.log('Stworzono Admina (admin/admin123)');
+        }
+
+        // NOWE: Domyślne ustawienie Auth Mode
+        const authSetting = await Setting.findOne({ where: { key: 'AUTH_MODE' } });
+        if (!authSetting) {
+            await Setting.create({ key: 'AUTH_MODE', value: 'LOCAL' });
+            console.log('Ustawiono domyślny tryb auth: LOCAL');
         }
 
         server.listen(PORT, () => {

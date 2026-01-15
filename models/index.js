@@ -8,7 +8,8 @@ const User = sequelize.define('User', {
     role: { type: DataTypes.STRING, allowNull: false, defaultValue: 'patient' },
     name: { type: DataTypes.STRING, allowNull: false },
     specialization: { type: DataTypes.STRING, allowNull: true },
-    isBanned: { type: DataTypes.BOOLEAN, defaultValue: false }
+    isBanned: { type: DataTypes.BOOLEAN, defaultValue: false },
+    refreshToken: { type: DataTypes.STRING, allowNull: true } // NOWE POLE
 });
 
 const Slot = sequelize.define('Slot', {
@@ -39,6 +40,12 @@ const Absence = sequelize.define('Absence', {
     reason: { type: DataTypes.STRING }
 });
 
+// 2. Setting - NOWY MODEL do Zadania 1
+const Setting = sequelize.define('Setting', {
+    key: { type: DataTypes.STRING, unique: true, allowNull: false },
+    value: { type: DataTypes.STRING, allowNull: false } // 'LOCAL', 'SESSION', 'NONE'
+});
+
 // Relacje
 User.hasMany(Slot, { foreignKey: 'doctorId', as: 'doctorSlots' });
 Slot.belongsTo(User, { foreignKey: 'doctorId', as: 'Doctor' });
@@ -61,4 +68,4 @@ Rating.belongsTo(User, { foreignKey: 'patientId', as: 'Patient' });
 User.hasMany(Absence, { foreignKey: 'doctorId' });
 Absence.belongsTo(User, { foreignKey: 'doctorId' });
 
-module.exports = { sequelize, User, Slot, CartItem, Rating, Absence };
+module.exports = { sequelize, User, Slot, CartItem, Rating, Absence, Setting };
