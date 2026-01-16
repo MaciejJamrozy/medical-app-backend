@@ -43,5 +43,6 @@ router.post('/cart/checkout', authenticateToken, authorizeRole(['patient']), pat
 router.get('/appointments/my', authenticateToken, authorizeRole(['patient']), patientCtrl.getMyAppointments);
 router.post('/appointments/:id/cancel', authenticateToken, authorizeRole(['patient']), patientCtrl.cancelAppointment);
 router.post('/ratings', authenticateToken, authorizeRole(['patient']), patientCtrl.addRating);
+router.get('/ratings', authenticateToken, patientCtrl.getRatings);
 
 module.exports = router;

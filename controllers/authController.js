@@ -12,7 +12,6 @@ exports.register = async (req, res) => {
     } catch (e) { res.status(400).json({ error: e.message }); }
 };
 
-// Logowanie generuje TERAZ dwa tokeny
 exports.login = async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -22,25 +21,18 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Błąd logowania' });
         }
 
-        if (user.isBanned) {
-            return res.status(403).json({ message: 'Konto zbanowane' });
-        }
-
-        // Generujemy Access Token (krótki czas życia, np. 15 minut)
         const accessToken = jwt.sign(
             { id: user.id, role: user.role }, 
             ACCESS_TOKEN_SECRET, 
             { expiresIn: '2m' } 
         );
 
-        // Generujemy Refresh Token (długi czas życia, np. 7 dni)
         const refreshToken = jwt.sign(
             { id: user.id, role: user.role }, 
             REFRESH_TOKEN_SECRET, 
             { expiresIn: '7d' }
         );
 
-        // Zapisujemy Refresh Token w bazie (żeby móc go unieważnić przy wylogowaniu)
         user.refreshToken = refreshToken;
         await user.save();
 
@@ -52,8 +44,10 @@ exports.login = async (req, res) => {
             accessToken, 
             refreshToken, 
             role: user.role, 
-            username: user.username, 
             id: user.id,
+            name: user.name,
+            username: user.username,
+            isBanned: user.isBanned,
             authMode // Wysyłamy info do frontendu, jak ma zapisać token
         });
 

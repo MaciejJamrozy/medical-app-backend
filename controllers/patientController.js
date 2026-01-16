@@ -1,4 +1,4 @@
-const { Slot, CartItem, User, Rating, Absence, sequelize } = require('../models');
+const { Slot, CartItem, User, Rating, Absence, Doctor, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 exports.addToCart = async (req, res) => {
@@ -159,13 +159,50 @@ exports.addRating = async (req, res) => {
     try {
         const { doctorId, stars, comment } = req.body;
         const patientId = req.user.id;
+
+        // --- 1. SPRAWDZENIE BANA (NOWE) ---
+        // Pobieramy aktualny stan pacjenta z bazy
+        const patient = await User.findByPk(patientId);
+        
+        // Jeśli pacjent jest zbanowany, przerywamy i zwracamy błąd
+        if (patient.isBanned) {
+            return res.status(403).json({ 
+                message: "Twoje konto zostało zbanowane. Nie możesz dodawać opinii." 
+            });
+        }
+        // ----------------------------------
+
+        // --- 2. RESZTA TWOJEJ LOGIKI (BEZ ZMIAN) ---
+        
+        // Sprawdzamy czy była wizyta (wymóg: oceniać mogą tylko pacjenci lekarza)
         const visit = await Slot.findOne({ where: { doctorId, patientId, status: 'booked' } });
         if (!visit) return res.status(403).json({ message: "Brak wizyty u tego lekarza" });
 
+        // Sprawdzamy czy już nie ocenił (wymóg: brak wielokrotnego głosowania)
         const exists = await Rating.findOne({ where: { doctorId, patientId } });
-        if (exists) return res.status(400).json({ message: "Już oceniono" });
+        if (exists) return res.status(400).json({ message: "Już oceniono tego lekarza" });
 
+        // Dodajemy opinię
         await Rating.create({ patientId, doctorId, stars, comment });
         res.status(201).json({ message: "Ocena dodana" });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+
+    } catch (e) { 
+        res.status(500).json({ error: e.message }); 
+    }
+};
+
+exports.getRatings = async (req, res) => {
+    try {
+        const patientId = req.user.id; // ID z tokena
+
+        // Pobieramy oceny TYLKO tego pacjenta
+        const ratings = await Rating.findAll({
+            where: { patientId },
+            include: [{ model: User, as: 'Doctor', attributes: ['name', 'specialization'] }] // Opcjonalnie: info o lekarzu
+        });
+
+        res.json(ratings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
