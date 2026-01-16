@@ -8,7 +8,8 @@ const User = sequelize.define('User', {
     name: { type: DataTypes.STRING, allowNull: false },
     specialization: { type: DataTypes.STRING, allowNull: true },
     isBanned: { type: DataTypes.BOOLEAN, defaultValue: false },
-    refreshToken: { type: DataTypes.STRING, allowNull: true }
+    refreshToken: { type: DataTypes.STRING, allowNull: true },
+    tokenVersion: { type: DataTypes.INTEGER, defaultValue: 0, allowNull: false }
 });
 
 const Slot = sequelize.define('Slot', {

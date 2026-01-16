@@ -21,10 +21,13 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: 'Błąd logowania' });
         }
 
+        user.tokenVersion += 1;
+        await user.save();
+
         const accessToken = jwt.sign(
-            { id: user.id, role: user.role }, 
+            { id: user.id, role: user.role, version: user.tokenVersion }, 
             ACCESS_TOKEN_SECRET, 
-            { expiresIn: '2m' } 
+            { expiresIn: '10s' } 
         );
 
         const refreshToken = jwt.sign(
@@ -54,30 +57,37 @@ exports.login = async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
-// NOWE: Odświeżanie tokena (Zadanie 2)
 exports.refreshToken = async (req, res) => {
     const { token } = req.body; // Client wysyła refresh token
     if (!token) return res.sendStatus(401);
 
     try {
-        // Sprawdź czy token jest w bazie
+        // 1. Szukamy użytkownika, który posiada ten konkretny Refresh Token
+        // To zabezpiecza przed użyciem starych tokenów (Single Session)
         const user = await User.findOne({ where: { refreshToken: token } });
-        if (!user) return res.sendStatus(403); // Token nie istnieje w bazie (np. po wylogowaniu)
+        
+        if (!user) return res.sendStatus(403); // Token nie istnieje w bazie (np. został nadpisany przez logowanie na innym urządzeniu)
 
-        // Weryfikacja kryptograficzna
+        // 2. Weryfikacja kryptograficzna (czy token nie wygasł i jest poprawny)
         jwt.verify(token, REFRESH_TOKEN_SECRET, (err, decoded) => {
             if (err) return res.sendStatus(403);
 
-            // Generuj nowy Access Token
+            // 3. Generuj nowy Access Token
+            // WAŻNE: Musimy w nim zawrzeć AKTUALNĄ wersję sesji z bazy (user.tokenVersion)
             const newAccessToken = jwt.sign(
-                { id: user.id, role: user.role }, 
+                { 
+                    id: user.id, 
+                    role: user.role, 
+                    version: user.tokenVersion // <--- KLUCZOWY ELEMENT
+                }, 
                 ACCESS_TOKEN_SECRET, 
-                { expiresIn: '2m' }
+                { expiresIn: '10s' } // Ustaw taki czas, jaki preferujesz (np. '15m')
             );
 
             res.json({ accessToken: newAccessToken });
         });
     } catch (e) {
+        console.error(e);
         res.status(500).json({ error: e.message });
     }
 };
