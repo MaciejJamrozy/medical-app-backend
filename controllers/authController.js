@@ -27,7 +27,7 @@ exports.login = async (req, res) => {
         const accessToken = jwt.sign(
             { id: user.id, role: user.role, version: user.tokenVersion }, 
             ACCESS_TOKEN_SECRET, 
-            { expiresIn: '10s' } 
+            { expiresIn: '10m' } 
         );
 
         const refreshToken = jwt.sign(
@@ -81,7 +81,7 @@ exports.refreshToken = async (req, res) => {
                     version: user.tokenVersion // <--- KLUCZOWY ELEMENT
                 }, 
                 ACCESS_TOKEN_SECRET, 
-                { expiresIn: '10s' } // Ustaw taki czas, jaki preferujesz (np. '15m')
+                { expiresIn: '10m' } // Ustaw taki czas, jaki preferujesz (np. '15m')
             );
 
             res.json({ accessToken: newAccessToken });

@@ -20,7 +20,8 @@ const Slot = sequelize.define('Slot', {
     patientName: { type: DataTypes.STRING },
     patientNotes: { type: DataTypes.TEXT },
     patientAge: { type: DataTypes.INTEGER },
-    patientGender: { type: DataTypes.STRING }
+    patientGender: { type: DataTypes.STRING },
+    attachmentPath: { type: DataTypes.STRING, allowNull: true }
 });
 
 const CartItem = sequelize.define('CartItem', {

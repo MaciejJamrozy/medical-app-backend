@@ -3,6 +3,8 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require("socket.io");
 const bcrypt = require('bcryptjs');
+const path = require('path');
+const fs = require('fs');
 
 const { sequelize, User, Setting } = require('./models');
 const apiRoutes = require('./routes/api');
@@ -10,8 +12,15 @@ const apiRoutes = require('./routes/api');
 const app = express();
 const PORT = 5001;
 
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)){
+    fs.mkdirSync(uploadsDir);
+}
+
 app.use(cors());
 app.use(express.json());
+
+app.use('/uploads', express.static(uploadsDir));
 
 const server = http.createServer(app);
 const io = new Server(server, {

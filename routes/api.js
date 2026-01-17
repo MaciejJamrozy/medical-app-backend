@@ -1,12 +1,30 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
 
 const authCtrl = require('../controllers/authController');
 const adminCtrl = require('../controllers/adminController');
 const doctorCtrl = require('../controllers/doctorController');
 const patientCtrl = require('../controllers/patientController');
 const publicCtrl = require('../controllers/publicController');
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, 'uploads/'); // Folder docelowy
+    },
+    filename: function (req, file, cb) {
+        // Unikalna nazwa pliku: timestamp + oryginalna nazwa
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // Limit 5MB
+});
 
 // AUTH
 router.post('/auth/register', authCtrl.register);
@@ -36,7 +54,8 @@ router.get('/doctor/:id/absences', authenticateToken, doctorCtrl.getAbsences);
 router.get('/doctor/schedule', authenticateToken, doctorCtrl.getSchedule);
 
 // PATIENT
-router.post('/cart/add', authenticateToken, authorizeRole(['patient']), patientCtrl.addToCart);
+// router.post('/cart/add', authenticateToken, authorizeRole(['patient']), patientCtrl.addToCart);
+router.post('/cart/add', authenticateToken, authorizeRole(['patient']), upload.single('file'), patientCtrl.addToCart);
 router.get('/cart', authenticateToken, authorizeRole(['patient']), patientCtrl.getCart);
 router.delete('/cart/:slotId', authenticateToken, authorizeRole(['patient']), patientCtrl.removeFromCart);
 router.post('/cart/checkout', authenticateToken, authorizeRole(['patient']), patientCtrl.checkout);
