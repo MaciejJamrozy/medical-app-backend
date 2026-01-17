@@ -1,27 +1,27 @@
 const bcrypt = require('bcryptjs');
-const { User, Slot } = require('./models'); // Importujemy modele
+const { User, Slot, Rating } = require('./models'); // <--- 1. DODANO Rating
 
 const seedDatabase = async () => {
     try {
-        // 1. Sprawdź, czy mamy już lekarzy w bazie. Jeśli tak, przerywamy (żeby nie dublować).
+        // 1. Sprawdź, czy mamy już lekarzy w bazie.
         const doctorsCount = await User.count({ where: { role: 'doctor' } });
         if (doctorsCount > 0) {
-            console.log('Pomijam seedowanie.');
+            console.log('Dane testowe już istnieją. Pomijam seedowanie.');
             return;
         }
 
-        // Wspólne hasło dla wszystkich: "12345"
+        console.log('🌱 Rozpoczynam dodawanie danych testowych...');
+
         const password = await bcrypt.hash('123', 10);
 
         // 2. TWORZENIE LEKARZY
         const doctorsData = [
-            { name: 'Grzegorz House', username: 'house', specialization: 'Diagnostyk', role: 'doctor' },
-            { name: 'Janusz Kardiolog', username: 'janusz', specialization: 'Kardiolog', role: 'doctor' },
-            { name: 'Anna Pediatra', username: 'anna', specialization: 'Pediatra', role: 'doctor' },
-            { name: 'Stephen Strange', username: 'strange', specialization: 'Chirurg', role: 'doctor' }
+            { name: 'Grzegorz House', username: 'house', specialization: 'Diagnostyk', role: 'doctor' },   // Index 0
+            { name: 'Janusz Kardiolog', username: 'janusz', specialization: 'Kardiolog', role: 'doctor' }, // Index 1
+            { name: 'Anna Pediatra', username: 'anna', specialization: 'Pediatra', role: 'doctor' },       // Index 2
+            { name: 'Stephen Strange', username: 'strange', specialization: 'Chirurg', role: 'doctor' }    // Index 3
         ];
 
-        // Zapisujemy lekarzy i zachowujemy ich instancje (żeby mieć ich ID do slotów)
         const createdDoctors = [];
         for (const doc of doctorsData) {
             const user = await User.create({ ...doc, password });
@@ -30,26 +30,48 @@ const seedDatabase = async () => {
 
         // 3. TWORZENIE PACJENTÓW
         const patientsData = [
-            { name: 'Jan Kowalski', username: 'jan', role: 'patient' },
-            { name: 'Max Nowak', username: 'max', role: 'patient' }
+            { name: 'Jan Kowalski', username: 'jan', role: 'patient' }, // Index 0
+            { name: 'Max Nowak', username: 'max', role: 'patient' }     // Index 1
         ];
 
+        // <--- 2. ZMIANA: Zapisujemy pacjentów do tablicy, żeby mieć ich ID
+        const createdPatients = [];
         for (const pat of patientsData) {
-            await User.create({ ...pat, password });
+            const user = await User.create({ ...pat, password });
+            createdPatients.push(user);
         }
 
-        // 4. GENEROWANIE SLOTÓW (GRAFIKU)
-        // Generujemy sloty na DZIŚ i JUTRO w godzinach 09:00 - 14:00
+        // 4. GENEROWANIE OPINII (NOWE)
+        // Tworzymy opinie, łącząc ID lekarzy i pacjentów z tablic powyżej
+        const ratingsData = [
+            // Opinie dla Dr. House (Index 0)
+            { doctorId: createdDoctors[0].id, patientId: createdPatients[0].id, stars: 5, comment: "Geniusz! Wyleczył mnie w minutę, chociaż był niemiły." },
+            { doctorId: createdDoctors[0].id, patientId: createdPatients[1].id, stars: 4, comment: "Skuteczny, ale sarkastyczny." },
+
+            // Opinie dla Dr. Kardiolog (Index 1)
+            { doctorId: createdDoctors[1].id, patientId: createdPatients[0].id, stars: 5, comment: "Serce jak dzwon po wizycie. Polecam!" },
+            { doctorId: createdDoctors[1].id, patientId: createdPatients[1].id, stars: 3, comment: "Długo czekałem w kolejce." },
+
+            // Opinie dla Dr. Pediatra (Index 2)
+            { doctorId: createdDoctors[2].id, patientId: createdPatients[1].id, stars: 5, comment: "Świetne podejście do dzieci. Synek przestał płakać." },
+
+            // Opinie dla Dr. Strange (Index 3)
+            { doctorId: createdDoctors[3].id, patientId: createdPatients[0].id, stars: 5, comment: "Ma magiczne ręce. Operacja udała się idealnie." },
+            { doctorId: createdDoctors[3].id, patientId: createdPatients[1].id, stars: 5, comment: "Najlepszy chirurg w multiwersum." }
+        ];
+
+        await Rating.bulkCreate(ratingsData); // <--- Zapisujemy opinie masowo
+
+        // 5. GENEROWANIE SLOTÓW (GRAFIKU)
         const today = new Date();
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
 
         const dates = [
-            today.toISOString().split('T')[0],    // Format YYYY-MM-DD
+            today.toISOString().split('T')[0],
             tomorrow.toISOString().split('T')[0]
         ];
 
-        // Godziny przyjęć: 09:00, 09:30 ... do 14:00
         const times = [
             '09:00', '09:30', '10:00', '10:30', '11:00', 
             '11:30', '12:00', '12:30', '13:00', '13:30', '14:00'
@@ -57,29 +79,24 @@ const seedDatabase = async () => {
 
         const slotsToCreate = [];
 
-        // Dla każdego lekarza...
         for (const doctor of createdDoctors) {
-            // Dla każdego dnia (dziś, jutro)...
             for (const date of dates) {
-                // Dla każdej godziny...
                 for (const time of times) {
-                    // Co trzeci slot zróbmy losowo zajęty (booked), żeby było ciekawiej
-                    // Ale większość niech będzie 'free'
-                    const isBooked = Math.random() < 0.1; // 10% szans na zajęty termin (symulacja)
+                    const isBooked = Math.random() < 0.1; 
 
                     slotsToCreate.push({
                         date: date,
                         time: time,
                         status: isBooked ? 'booked' : 'free',
                         doctorId: doctor.id,
-                        // Jeśli booked, to teoretycznie powinniśmy przypisać pacjenta, 
-                        // ale dla uproszczenia zostawmy sam status 'booked' (będzie widoczny jako czerwony)
                     });
                 }
             }
         }
 
         await Slot.bulkCreate(slotsToCreate);
+
+        console.log('✅ Dane testowe (lekarze, pacjenci, sloty, opinie) dodane pomyślnie!');
 
     } catch (error) {
         console.error('Błąd podczas seedowania:', error);
