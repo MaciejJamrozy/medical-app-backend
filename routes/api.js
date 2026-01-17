@@ -55,7 +55,7 @@ router.get('/doctor/schedule', authenticateToken, doctorCtrl.getSchedule);
 
 // PATIENT
 // router.post('/cart/add', authenticateToken, authorizeRole(['patient']), patientCtrl.addToCart);
-router.post('/cart/add', authenticateToken, authorizeRole(['patient']), upload.single('file'), patientCtrl.addToCart);
+router.post('/cart/add', authenticateToken, authorizeRole(['patient']), upload.array('files', 5), patientCtrl.addToCart);
 router.get('/cart', authenticateToken, authorizeRole(['patient']), patientCtrl.getCart);
 router.delete('/cart/:slotId', authenticateToken, authorizeRole(['patient']), patientCtrl.removeFromCart);
 router.post('/cart/checkout', authenticateToken, authorizeRole(['patient']), patientCtrl.checkout);

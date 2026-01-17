@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
+const seedDatabase = require('./seed');
 
 const { sequelize, User, Setting } = require('./models');
 const apiRoutes = require('./routes/api');
@@ -58,6 +59,8 @@ const startServer = async () => {
             await Setting.create({ key: 'AUTH_MODE', value: 'LOCAL' });
             console.log('Ustawiono domyślny tryb auth: LOCAL');
         }
+
+        await seedDatabase();
 
         server.listen(PORT, () => {
             console.log(`Serwer działa na porcie ${PORT}`);

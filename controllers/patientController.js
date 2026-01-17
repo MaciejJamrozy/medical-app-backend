@@ -3,25 +3,23 @@ const { Op } = require('sequelize');
 const fs = require('fs');
 const path = require('path');
 
-// Funkcja pomocnicza do usuwania pliku
 const deleteAttachment = (attachmentPath) => {
     if (!attachmentPath) return;
-    
     const fullPath = path.join(__dirname, '..', attachmentPath);
-
     fs.unlink(fullPath, (err) => {
-        if (err && err.code !== 'ENOENT') {
-            console.error("Błąd usuwania pliku:", err);
-        }
+        if (err && err.code !== 'ENOENT') console.error("Błąd usuwania pliku:", err);
     });
 };
 
 exports.addToCart = async (req, res) => {
     if (req.user.role !== 'patient') return res.status(403).json({ message: "Brak uprawnień" });
     
-    // --- 1. OBSŁUGA PLIKU ---
-    // Jeśli Multer zapisał plik, jego dane są w req.file
-    const attachmentPath = req.file ? `/uploads/${req.file.filename}` : null;
+    let attachmentPaths = [];
+    if (req.files && req.files.length > 0) {
+        attachmentPaths = req.files.map(file => `/uploads/${file.filename}`);
+    }
+
+    const attachmentPathString = attachmentPaths.length > 0 ? JSON.stringify(attachmentPaths) : null;
 
     const transaction = await sequelize.transaction();
     try {
@@ -70,7 +68,7 @@ exports.addToCart = async (req, res) => {
                     patientAge: details.patientAge,
                     patientGender: details.patientGender,
                     patientNotes: details.notes,
-                    attachmentPath: attachmentPath
+                    attachmentPath: attachmentPathString
                 });
             }
             await slot.save({ transaction });
@@ -110,25 +108,27 @@ exports.removeFromCart = async (req, res) => {
 
         await CartItem.destroy({ where: { slotId, patientId }, transaction });
 
-        // --- USUWANIE PLIKU ---
+        // --- NOWA LOGIKA USUWANIA WIELU PLIKÓW ---
         if (slot.attachmentPath) {
-            deleteAttachment(slot.attachmentPath);
+            try {
+                // Próbujemy odczytać to jako tablicę (nowy format)
+                const paths = JSON.parse(slot.attachmentPath);
+                if (Array.isArray(paths)) {
+                    paths.forEach(p => deleteAttachment(p));
+                }
+            } catch (e) {
+                // Fallback: Jeśli to nie JSON (np. stare dane), usuwamy jako pojedynczy plik
+                deleteAttachment(slot.attachmentPath);
+            }
         }
-        // ----------------------
+        // ------------------------------------------
 
         slot.status = 'free';
         slot.patientId = null;
-        
-        // Czyścimy też attachmentPath
         Object.assign(slot, { 
-            visitType: null, 
-            patientName: null, 
-            patientAge: null, 
-            patientGender: null, 
-            patientNotes: null,
-            attachmentPath: null // <--- WAŻNE
+            visitType: null, patientName: null, patientAge: null, 
+            patientGender: null, patientNotes: null, attachmentPath: null 
         });
-        
         await slot.save({ transaction });
 
         await transaction.commit();
@@ -197,25 +197,25 @@ exports.cancelAppointment = async (req, res) => {
             return res.status(400).json({ message: "Wizyta już się odbyła" }); 
         }
 
-        // --- USUWANIE PLIKU ---
+        // --- NOWA LOGIKA USUWANIA WIELU PLIKÓW ---
         if (slot.attachmentPath) {
-            deleteAttachment(slot.attachmentPath);
+            try {
+                const paths = JSON.parse(slot.attachmentPath);
+                if (Array.isArray(paths)) {
+                    paths.forEach(p => deleteAttachment(p));
+                }
+            } catch (e) {
+                deleteAttachment(slot.attachmentPath);
+            }
         }
-        // ----------------------
+        // ------------------------------------------
 
         slot.status = 'free';
         slot.patientId = null;
-        
-        // Czyścimy attachmentPath
         Object.assign(slot, { 
-            visitType: null, 
-            patientName: null, 
-            patientAge: null, 
-            patientGender: null, 
-            patientNotes: null,
-            attachmentPath: null // <--- WAŻNE
+            visitType: null, patientName: null, patientAge: null, 
+            patientGender: null, patientNotes: null, attachmentPath: null 
         });
-        
         await slot.save({ transaction });
 
         await transaction.commit();
