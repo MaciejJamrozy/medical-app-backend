@@ -1,25 +1,22 @@
 const bcrypt = require('bcryptjs');
-const { User, Slot, Rating } = require('./models'); // <--- 1. DODANO Rating
+const { User, Slot, Rating } = require('./models');
 
 const seedDatabase = async () => {
     try {
-        // 1. Sprawdź, czy mamy już lekarzy w bazie.
         const doctorsCount = await User.count({ where: { role: 'doctor' } });
         if (doctorsCount > 0) {
-            console.log('Dane testowe już istnieją. Pomijam seedowanie.');
+            console.log('Pomijam seedowanie.');
             return;
         }
 
-        console.log('🌱 Rozpoczynam dodawanie danych testowych...');
-
         const password = await bcrypt.hash('123', 10);
 
-        // 2. TWORZENIE LEKARZY
         const doctorsData = [
-            { name: 'Grzegorz House', username: 'house', specialization: 'Diagnostyk', role: 'doctor' },   // Index 0
-            { name: 'Janusz Kardiolog', username: 'janusz', specialization: 'Kardiolog', role: 'doctor' }, // Index 1
-            { name: 'Anna Pediatra', username: 'anna', specialization: 'Pediatra', role: 'doctor' },       // Index 2
-            { name: 'Stephen Strange', username: 'strange', specialization: 'Chirurg', role: 'doctor' }    // Index 3
+            { name: 'Gregory House', username: 'house', specialization: 'Lekarz Rodzinny', role: 'doctor' },
+            { name: 'Janusz Walczak', username: 'janusz', specialization: 'Kardiolog', role: 'doctor' },
+            { name: 'Anna Nowak', username: 'anna', specialization: 'Pediatra', role: 'doctor' },
+            { name: 'Stanisław Kowalski', username: 'stanislaw', specialization: 'Neurolog', role: 'doctor' },
+            { name: 'Sylwia Niedziółka', username: 'sylwia', specialization: 'Ortopeda', role: 'doctor' }
         ];
 
         const createdDoctors = [];
@@ -28,41 +25,37 @@ const seedDatabase = async () => {
             createdDoctors.push(user);
         }
 
-        // 3. TWORZENIE PACJENTÓW
         const patientsData = [
-            { name: 'Jan Kowalski', username: 'jan', role: 'patient' }, // Index 0
-            { name: 'Max Nowak', username: 'max', role: 'patient' }     // Index 1
+            { name: 'Jan Kowalski', username: 'jan', role: 'patient' },
+            { name: 'Maks Nowak', username: 'max', role: 'patient' },
+            { name: 'Jan Gonciarz', username: 'janek', role: 'patient' },
         ];
 
-        // <--- 2. ZMIANA: Zapisujemy pacjentów do tablicy, żeby mieć ich ID
         const createdPatients = [];
         for (const pat of patientsData) {
             const user = await User.create({ ...pat, password });
             createdPatients.push(user);
         }
 
-        // 4. GENEROWANIE OPINII (NOWE)
-        // Tworzymy opinie, łącząc ID lekarzy i pacjentów z tablic powyżej
         const ratingsData = [
-            // Opinie dla Dr. House (Index 0)
-            { doctorId: createdDoctors[0].id, patientId: createdPatients[0].id, stars: 5, comment: "Geniusz! Wyleczył mnie w minutę, chociaż był niemiły." },
-            { doctorId: createdDoctors[0].id, patientId: createdPatients[1].id, stars: 4, comment: "Skuteczny, ale sarkastyczny." },
+            { doctorId: createdDoctors[0].id, patientId: createdPatients[0].id, stars: 5, comment: "Geniusz!" },
+            { doctorId: createdDoctors[0].id, patientId: createdPatients[1].id, stars: 4, comment: "Skuteczny lekarz." },
 
-            // Opinie dla Dr. Kardiolog (Index 1)
-            { doctorId: createdDoctors[1].id, patientId: createdPatients[0].id, stars: 5, comment: "Serce jak dzwon po wizycie. Polecam!" },
+            { doctorId: createdDoctors[1].id, patientId: createdPatients[0].id, stars: 5, comment: "Polecam!" },
             { doctorId: createdDoctors[1].id, patientId: createdPatients[1].id, stars: 3, comment: "Długo czekałem w kolejce." },
 
-            // Opinie dla Dr. Pediatra (Index 2)
-            { doctorId: createdDoctors[2].id, patientId: createdPatients[1].id, stars: 5, comment: "Świetne podejście do dzieci. Synek przestał płakać." },
+            { doctorId: createdDoctors[2].id, patientId: createdPatients[1].id, stars: 5, comment: "Świetne podejście do pacjenta." },
 
-            // Opinie dla Dr. Strange (Index 3)
-            { doctorId: createdDoctors[3].id, patientId: createdPatients[0].id, stars: 5, comment: "Ma magiczne ręce. Operacja udała się idealnie." },
-            { doctorId: createdDoctors[3].id, patientId: createdPatients[1].id, stars: 5, comment: "Najlepszy chirurg w multiwersum." }
+            { doctorId: createdDoctors[3].id, patientId: createdPatients[0].id, stars: 5, comment: "Operacja udała się." },
+            { doctorId: createdDoctors[3].id, patientId: createdPatients[1].id, stars: 5, comment: "Najlepszy neurolog w mieście." },
+
+            { doctorId: createdDoctors[4].id, patientId: createdPatients[2].id, stars: 5, comment: "Dobra diagnoza." },
+            { doctorId: createdDoctors[4].id, patientId: createdPatients[0].id, stars: 5, comment: "Polecam." },
+            { doctorId: createdDoctors[4].id, patientId: createdPatients[1].id, stars: 5, comment: "Bardzo miła Pani doktor." }
         ];
 
-        await Rating.bulkCreate(ratingsData); // <--- Zapisujemy opinie masowo
+        await Rating.bulkCreate(ratingsData);
 
-        // 5. GENEROWANIE SLOTÓW (GRAFIKU)
         const today = new Date();
         const tomorrow = new Date(today);
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -82,7 +75,8 @@ const seedDatabase = async () => {
         for (const doctor of createdDoctors) {
             for (const date of dates) {
                 for (const time of times) {
-                    const isBooked = Math.random() < 0.1; 
+                    // const isBooked = Math.random() < 0.1; 
+                    const isBooked = false;
 
                     slotsToCreate.push({
                         date: date,
@@ -96,7 +90,7 @@ const seedDatabase = async () => {
 
         await Slot.bulkCreate(slotsToCreate);
 
-        console.log('✅ Dane testowe (lekarze, pacjenci, sloty, opinie) dodane pomyślnie!');
+        console.log('Dane testowe dodane pomyślnie');
 
     } catch (error) {
         console.error('Błąd podczas seedowania:', error);
