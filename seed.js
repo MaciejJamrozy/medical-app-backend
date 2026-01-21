@@ -75,7 +75,6 @@ const seedDatabase = async () => {
         for (const doctor of createdDoctors) {
             for (const date of dates) {
                 for (const time of times) {
-                    // const isBooked = Math.random() < 0.1; 
                     const isBooked = false;
 
                     slotsToCreate.push({
