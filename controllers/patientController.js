@@ -108,16 +108,13 @@ exports.removeFromCart = async (req, res) => {
 
         await CartItem.destroy({ where: { slotId, patientId }, transaction });
 
-        // --- NOWA LOGIKA USUWANIA WIELU PLIKÓW ---
         if (slot.attachmentPath) {
             try {
-                // Próbujemy odczytać to jako tablicę (nowy format)
                 const paths = JSON.parse(slot.attachmentPath);
                 if (Array.isArray(paths)) {
                     paths.forEach(p => deleteAttachment(p));
                 }
             } catch (e) {
-                // Fallback: Jeśli to nie JSON (np. stare dane), usuwamy jako pojedynczy plik
                 deleteAttachment(slot.attachmentPath);
             }
         }
@@ -197,7 +194,6 @@ exports.cancelAppointment = async (req, res) => {
             return res.status(400).json({ message: "Wizyta już się odbyła" }); 
         }
 
-        // --- NOWA LOGIKA USUWANIA WIELU PLIKÓW ---
         if (slot.attachmentPath) {
             try {
                 const paths = JSON.parse(slot.attachmentPath);
@@ -208,7 +204,6 @@ exports.cancelAppointment = async (req, res) => {
                 deleteAttachment(slot.attachmentPath);
             }
         }
-        // ------------------------------------------
 
         slot.status = 'free';
         slot.patientId = null;
@@ -232,29 +227,19 @@ exports.addRating = async (req, res) => {
         const { doctorId, stars, comment } = req.body;
         const patientId = req.user.id;
 
-        // --- 1. SPRAWDZENIE BANA (NOWE) ---
-        // Pobieramy aktualny stan pacjenta z bazy
         const patient = await User.findByPk(patientId);
         
-        // Jeśli pacjent jest zbanowany, przerywamy i zwracamy błąd
         if (patient.isBanned) {
             return res.status(403).json({ 
                 message: "Twoje konto zostało zbanowane. Nie możesz dodawać opinii." 
             });
         }
-        // ----------------------------------
-
-        // --- 2. RESZTA TWOJEJ LOGIKI (BEZ ZMIAN) ---
-        
-        // Sprawdzamy czy była wizyta (wymóg: oceniać mogą tylko pacjenci lekarza)
         const visit = await Slot.findOne({ where: { doctorId, patientId, status: 'booked' } });
         if (!visit) return res.status(403).json({ message: "Brak wizyty u tego lekarza" });
 
-        // Sprawdzamy czy już nie ocenił (wymóg: brak wielokrotnego głosowania)
         const exists = await Rating.findOne({ where: { doctorId, patientId } });
         if (exists) return res.status(400).json({ message: "Już oceniono tego lekarza" });
 
-        // Dodajemy opinię
         await Rating.create({ patientId, doctorId, stars, comment });
         res.status(201).json({ message: "Ocena dodana" });
 

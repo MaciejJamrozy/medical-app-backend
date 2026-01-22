@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User, Setting } = require('../models');
 const { ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET } = require('../middleware/auth');
+const { PORT } = require('../server');
 
 exports.register = async (req, res) => {
     try {
@@ -27,7 +28,7 @@ exports.login = async (req, res) => {
         const accessToken = jwt.sign(
             { id: user.id, role: user.role, version: user.tokenVersion }, 
             ACCESS_TOKEN_SECRET, 
-            { expiresIn: '10m' } 
+            { expiresIn: '10s' } 
         );
 
         const refreshToken = jwt.sign(
@@ -39,49 +40,56 @@ exports.login = async (req, res) => {
         user.refreshToken = refreshToken;
         await user.save();
 
-        // Pobieramy aktualne ustawienie trybu autoryzacji
         const authSetting = await Setting.findOne({ where: { key: 'AUTH_MODE' } });
         const authMode = authSetting ? authSetting.value : 'LOCAL';
 
+        res.cookie('refreshToken', refreshToken, {
+            httpOnly: true,
+            sameSite: 'lax',
+            path: "/api/auth",
+            maxAge: 7 * 24 * 60 * 60 * 1000
+        });
+
         res.json({ 
             accessToken, 
-            refreshToken, 
             role: user.role, 
             id: user.id,
             name: user.name,
             username: user.username,
             isBanned: user.isBanned,
-            authMode // Wysyłamy info do frontendu, jak ma zapisać token
+            authMode 
         });
 
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
 exports.refreshToken = async (req, res) => {
-    const { token } = req.body; // Client wysyła refresh token
+    const token = req.cookies.refreshToken; 
+    
     if (!token) return res.sendStatus(401);
 
     try {
-        // 1. Szukamy użytkownika, który posiada ten konkretny Refresh Token
-        // To zabezpiecza przed użyciem starych tokenów (Single Session)
         const user = await User.findOne({ where: { refreshToken: token } });
         
-        if (!user) return res.sendStatus(403); // Token nie istnieje w bazie (np. został nadpisany przez logowanie na innym urządzeniu)
+        if (!user) {
+            res.clearCookie('refreshToken');
+            return res.sendStatus(403); 
+        }
 
-        // 2. Weryfikacja kryptograficzna (czy token nie wygasł i jest poprawny)
         jwt.verify(token, REFRESH_TOKEN_SECRET, (err, decoded) => {
-            if (err) return res.sendStatus(403);
+            if (err) {
+                res.clearCookie('refreshToken');
+                return res.sendStatus(403);
+            }
 
-            // 3. Generuj nowy Access Token
-            // WAŻNE: Musimy w nim zawrzeć AKTUALNĄ wersję sesji z bazy (user.tokenVersion)
             const newAccessToken = jwt.sign(
                 { 
                     id: user.id, 
                     role: user.role, 
-                    version: user.tokenVersion // <--- KLUCZOWY ELEMENT
+                    version: user.tokenVersion 
                 }, 
                 ACCESS_TOKEN_SECRET, 
-                { expiresIn: '10m' } // Ustaw taki czas, jaki preferujesz (np. '15m')
+                { expiresIn: '10s' } 
             );
 
             res.json({ accessToken: newAccessToken });
@@ -92,9 +100,9 @@ exports.refreshToken = async (req, res) => {
     }
 };
 
-// NOWE: Wylogowanie (usuwa refresh token z bazy)
 exports.logout = async (req, res) => {
-    const { token } = req.body;
+    const token = req.cookies.refreshToken;
+    
     if (!token) return res.sendStatus(204);
 
     try {
@@ -103,13 +111,19 @@ exports.logout = async (req, res) => {
             user.refreshToken = null;
             await user.save();
         }
+        
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            sameSite: 'lax',
+            path: "/api/auth",
+        });
+        
         res.sendStatus(204);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
-// NOWE: Pobieranie aktualnego trybu auth (dla frontendu przy starcie)
 exports.getAuthSettings = async (req, res) => {
     try {
         const setting = await Setting.findOne({ where: { key: 'AUTH_MODE' } });
